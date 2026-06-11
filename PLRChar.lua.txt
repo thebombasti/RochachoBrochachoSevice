@@ -1,0 +1,516 @@
+--[[
+    ROCHACHO8_BROCHACHO_SERVICE LOADER
+]]
+
+-- ============================================================
+-- 1. SERVICE LOADER
+-- ============================================================
+local RBXM_NAME = "RochachoBrochachoService.rbxm"
+local RBXM_URL  = "https://github.com/thebombasti/RochachoBrochachoSevice/raw/refs/heads/main/RochachoBrochachoService.rbxm"
+
+-- Auto-download if missing
+if not isfile(RBXM_NAME) then
+    warn("[Loader] File not found, downloading...")
+    local ok, data = pcall(game.HttpGet, game, RBXM_URL, true)
+    if ok and data then
+        writefile(RBXM_NAME, data)
+        warn("[Loader] Downloaded successfully.")
+    else
+        error("[Loader] CRITICAL: Failed to download RochachoBrochachoService.rbxm")
+    end
+end
+
+local BrochachoService =
+    game:FindFirstChild("Rochacho8_BrochachoService") or
+    game.Workspace:FindFirstChild("Rochacho8_BrochachoService")
+
+if not BrochachoService then
+    local ok, assetId = pcall(getcustomasset, RBXM_NAME)
+    if ok then
+        BrochachoService = game:GetObjects(assetId)[1]
+        BrochachoService.Name   = "Rochacho8_BrochachoService"
+        BrochachoService.Parent = game
+    else
+        error("[Xeno] CRITICAL: RochachoBrochachoService.rbxm not found.")
+    end
+end
+
+local Base    = BrochachoService:FindFirstChild("Base")
+local BodySys = BrochachoService:FindFirstChild("BodySys")
+local Persist = BodySys and BodySys:FindFirstChild("Persist")
+local shouldPersist = Persist and Persist.Value or true
+
+-- ============================================================
+-- 2. UTILITIES
+-- ============================================================
+local function DarkenColor(baseColor, amount)
+    local h, s, v = baseColor:ToHSV()
+    return Color3.fromHSV(h, s, math.clamp(v - math.abs(amount), 0, 1))
+end
+
+local function HasShirt(character)
+    for _, v in ipairs(character:GetChildren()) do
+        if v:IsA("Shirt") then return true end
+    end
+    return false
+end
+
+local function ResolvePath(root, path)
+    local current = root
+    for part in path:gmatch("[^.]+") do
+        local name = part:gsub("_", " ")
+        current = current:FindFirstChild(name)
+        if not current then return nil end
+    end
+    return current
+end
+
+local function StripSurfaceAppearances(obj)
+    repeat
+        local found = false
+        for _, sa in ipairs(obj:GetDescendants()) do
+            if sa:IsA("SurfaceAppearance") then
+                sa:Destroy()
+                found = true
+            end
+        end
+        local sa = obj:FindFirstChildOfClass("SurfaceAppearance")
+        if sa then sa:Destroy() found = true end
+    until not found
+end
+
+local function ToRbxAssetId(url)
+    if not url or url == "" then return "" end
+    local id = url:match("id=(%d+)") or url:match("rbxassetid://(%d+)")
+    return id and "rbxassetid://" .. id or ""
+end
+
+local function ApplyTexture(part, rbxId)
+    if part:IsA("MeshPart") then
+        part.TextureID = rbxId
+    end
+    for _, p in ipairs(part:GetDescendants()) do
+        if p:IsA("MeshPart") then
+            p.TextureID = rbxId
+        end
+    end
+end
+
+local DARKEN_PARTS = {
+    ["LeftN"]  = true,
+    ["RightN"] = true,
+    ["LeftA"]  = true,
+    ["RightA"] = true,
+}
+
+-- ============================================================
+-- 3. BODY DATA
+-- ============================================================
+local BodyType1 = {
+    Rigtype     = "R6",
+    LegSpace    = 0.42,
+    Persistent  = true,
+    ShirtParts  = { "WD60Shirt" },
+    PantsParts  = { "LeftMark", "RightMark", "Left Leg", "Right Leg" },
+    TorsoMesh   = 48112070,
+
+    LeftLeg = {
+        Model    = "BodyType1.Left_Leg",
+        Position = Vector3.new(-0.889, -1.835, 0.212),
+        Rotation = Vector3.new(0, 0, 0),
+        Size     = Vector3.new(2.061, 2.317, 2.113),
+    },
+    RightLeg = {
+        Model    = "BodyType1.Right_Leg",
+        Position = Vector3.new(0.893, -1.848, 0.237),
+        Rotation = Vector3.new(0, 0, 0),
+        Size     = Vector3.new(2.061, 2.3, 2.113),
+    },
+
+    Hewlett = {
+        Model    = "BodyType1.Hewlett",
+        Position = Vector3.new(-0.026, 0.034, -0.784),
+        Weld     = { ParentPart = "Torso" }
+    },
+
+    LeftMark = {
+        Model        = "BodyType1.LeftMark",
+        Color        = "Left Leg",
+        Position     = Vector3.new(-0.791, -1.134, 0.655),
+        Rotation     = Vector3.new(0, -90, 0),
+        Weld         = { ParentPart = "Left Leg" },
+        PantsTexture = true
+    },
+
+    RightMark = {
+        Model        = "BodyType1.RightMark",
+        Color        = "Right Leg",
+        Position     = Vector3.new(0.867, -1.134, 0.655),
+        Rotation     = Vector3.new(0, -90, 0),
+        Weld         = { ParentPart = "Right Leg" },
+        PantsTexture = true
+    },
+
+    WD60 = {
+        Model       = "BodyType1.WD60",
+        Color       = "Torso",
+        Position    = Vector3.new(0.009, -0.775, -0.436),
+        Rotation    = Vector3.new(0, 90, -21.558),
+        Weld        = { ParentPart = "Torso" },
+        HideIfShirt = true
+    },
+
+    WD60Shirt = {
+        Model         = "BodyType1.WD60Shirt",
+        Color         = "Torso",
+        Position      = Vector3.new(0.025, -0.98, -0.603),
+        Rotation      = Vector3.new(-18.386, 0, 0),
+        Weld          = { ParentPart = "Torso" },
+        HideIfNoShirt = true,
+        ShirtTexture  = true
+    }
+}
+
+local BodyType2 = {
+	Rigtype     = "R6",
+	LegSpace    = 0.2,
+	Persistent  = true,
+	ShirtParts  = { "Hewlett.Call" },
+	PantsParts  = { "LeftMark", "RightMark", "Left Leg", "Right Leg" },
+	TorsoMesh   = 48112070,
+
+	LeftLeg = {
+		Model    = "BodyType2.Left_Leg",
+		Position = Vector3.new(-0.687, -1.888, -0.001),
+		Rotation = Vector3.new(0, 0, 0),
+		Size     = Vector3.new(1.559, 2.186, 1.367),
+	},
+	RightLeg = {
+		Model    = "BodyType2.Right_Leg",
+		Position = Vector3.new(0.7, -1.888, 0.015),
+		Rotation = Vector3.new(0, 0, 0),
+		Size     = Vector3.new(1.578, 2.16, 1.367),
+	},
+
+	Hewlett = {
+		Model    = "BodyType2.Hewlett",
+		Position = Vector3.new(-0.026, 0.117, -0.782),
+		Weld     = { ParentPart = "Torso" }
+	},
+
+	LeftMark = {
+		Model        = "BodyType2.LeftMark",
+		Color        = "Left Leg",
+		Position     = Vector3.new(-0.652, -1.196, 0.448),
+		Rotation     = Vector3.new(0, -90, -7.775),
+		Weld         = { ParentPart = "Left Leg" },
+		PantsTexture = true
+	},
+
+	RightMark = {
+		Model        = "BodyType2.RightMark",
+		Color        = "Right Leg",
+		Position     = Vector3.new(0.594, -1.196, 0.448),
+		Rotation     = Vector3.new(0, -90, -7.775),
+		Weld         = { ParentPart = "Right Leg" },
+		PantsTexture = true
+	}
+}
+
+-- ============================================================
+-- 4. APPLY BODY
+-- ============================================================
+local function ApplyBodyType(character, dataTable)
+    local shirtFound = HasShirt(character)
+    local hrp        = character:FindFirstChild("HumanoidRootPart")
+    local torso      = character:FindFirstChild("Torso")
+
+    if not hrp or not torso or not Base then
+        warn("[Loader] Missing HumanoidRootPart, Torso, or Base")
+        return
+    end
+
+    local function ApplyClothingTexture(part, clothingType)
+        local item  = character:FindFirstChildOfClass(clothingType)
+        local url   = clothingType == "Shirt"
+            and (item and item.ShirtTemplate or "")
+            or  (item and item.PantsTemplate or "")
+        ApplyTexture(part, ToRbxAssetId(url))
+    end
+
+    local function HRPRelativeCFrame(pos, rot)
+        return hrp.CFrame
+            * CFrame.new(pos)
+            * CFrame.Angles(
+                math.rad(rot.X),
+                math.rad(rot.Y),
+                math.rad(rot.Z)
+            )
+    end
+
+    local function WeldC0(parentPart, pos, rot)
+        return parentPart.CFrame:ToObjectSpace(HRPRelativeCFrame(pos, rot))
+    end
+
+    -- 4a. Torso SpecialMesh
+    if torso and dataTable.TorsoMesh then
+        local sm = torso:FindFirstChildOfClass("SpecialMesh") or Instance.new("SpecialMesh")
+        sm.MeshType = Enum.MeshType.FileMesh
+        sm.MeshId   = "rbxassetid://" .. tostring(dataTable.TorsoMesh)
+        sm.Parent   = torso
+    end
+
+    -- 4b. Swap legs
+    for _, legKey in ipairs({ "LeftLeg", "RightLeg" }) do
+        local info     = dataTable[legKey]
+        local limbName = legKey == "LeftLeg" and "Left Leg" or "Right Leg"
+        local limb     = character:FindFirstChild(limbName)
+        if not info or not limb then
+            warn("[Loader] Leg or info missing for: " .. legKey)
+            continue
+        end
+
+        local template = ResolvePath(Base, info.Model)
+        if not template then
+            warn("[Loader] Leg model not found: " .. tostring(info.Model))
+            continue
+        end
+
+        local newPart      = template:Clone()
+        StripSurfaceAppearances(newPart)
+        newPart.Name       = limbName
+        newPart.Size       = info.Size
+        newPart.CFrame     = HRPRelativeCFrame(info.Position, info.Rotation)
+        newPart.Color      = limb.Color
+        newPart.CanCollide = true
+        newPart.Anchored   = false
+
+        ApplyClothingTexture(newPart, "Pants")
+
+        for _, child in ipairs(limb:GetChildren()) do
+            if child:IsA("TouchTransmitter") then continue end
+            child.Parent = newPart
+        end
+
+        for _, motor in ipairs(character:GetDescendants()) do
+            if motor:IsA("Motor6D") then
+                if motor.Part0 == limb then motor.Part0 = newPart end
+                if motor.Part1 == limb then motor.Part1 = newPart end
+            end
+        end
+
+        newPart.Parent = character
+        limb:Destroy()
+    end
+
+    -- 4c. Hip spacing
+    local legSpace = dataTable.LegSpace or 0
+    local leftHip  = torso:FindFirstChild("Left Hip")
+    local rightHip = torso:FindFirstChild("Right Hip")
+    if leftHip  then leftHip.C0  = leftHip.C0  * CFrame.new(0, 0, legSpace) end
+    if rightHip then rightHip.C0 = rightHip.C0 * CFrame.new(0, 0, legSpace) end
+
+    -- 4d. Hewlett
+    do
+        local info = dataTable.Hewlett
+        if info then
+            local old = character:FindFirstChild("Hewlett")
+            if old then old:Destroy() end
+
+            local template = ResolvePath(Base, info.Model)
+            if not template then
+                warn("[Loader] Hewlett model not found")
+            else
+                local model     = template:Clone()
+                model.Name      = "Hewlett"
+                StripSurfaceAppearances(model)
+                model.Parent    = character
+
+                local torsoColor = torso and torso.Color or Color3.new(1, 1, 1)
+                local darkColor  = DarkenColor(torsoColor, 0.3)
+
+                for _, p in ipairs(model:GetDescendants()) do
+                    if p:IsA("BasePart") then
+                        if DARKEN_PARTS[p.Name] then
+                            p.Color = darkColor
+                            for _, decal in ipairs(p:GetChildren()) do
+                                if decal:IsA("Decal") then
+                                    decal.Color3 = darkColor
+                                end
+                            end
+                        else
+                            p.Color = torsoColor
+                        end
+                    end
+                end
+
+                local call       = model.PrimaryPart
+                local targetPart = character:FindFirstChild(info.Weld.ParentPart)
+                if call and targetPart then
+                    call.Transparency = shirtFound and 0 or 1
+                    if shirtFound then ApplyClothingTexture(call, "Shirt") end
+                    call.CFrame = HRPRelativeCFrame(info.Position, Vector3.new(0, 0, 0))
+                    local weld  = Instance.new("Weld")
+                    weld.Part0  = targetPart
+                    weld.Part1  = call
+                    weld.C0     = WeldC0(targetPart, info.Position, Vector3.new(0, 0, 0))
+                    weld.Parent = call
+                else
+                    warn("[Loader] Hewlett PrimaryPart or Torso missing")
+                end
+            end
+        end
+    end
+
+    -- 4e. Remaining attachment parts
+    for name, info in pairs(dataTable) do
+        if type(info) ~= "table" or not info.Weld then continue end
+        if name == "Hewlett" then continue end
+
+        local old = character:FindFirstChild(name)
+        if old then old:Destroy() end
+
+        local colorSource   = character:FindFirstChild(info.Color or info.Weld.ParentPart)
+        local resolvedColor = colorSource and colorSource.Color or Color3.new(1, 1, 1)
+        if info.ColorShift then
+            resolvedColor = DarkenColor(resolvedColor, info.ColorShift)
+        end
+
+        local transparency = 0
+        if info.HideIfShirt and shirtFound then
+            transparency = 1
+        elseif info.HideIfNoShirt and not shirtFound then
+            transparency = 1
+        end
+
+        local pos = info.Position or Vector3.new(0, 0, 0)
+        local rot = info.Rotation or Vector3.new(0, 0, 0)
+
+        local template = ResolvePath(Base, info.Model)
+        if not template then
+            warn("[Loader] Model not found for " .. name .. ": " .. tostring(info.Model))
+            continue
+        end
+
+        local part        = template:Clone()
+        StripSurfaceAppearances(part)
+        part.Name         = name
+        part.Color        = resolvedColor
+        part.Transparency = transparency
+        part.CanCollide   = false
+        part.Anchored     = false
+        part.Parent       = character
+
+        if info.PantsTexture then ApplyClothingTexture(part, "Pants") end
+        if info.ShirtTexture  then ApplyClothingTexture(part, "Shirt") end
+
+        local targetPart = character:FindFirstChild(info.Weld.ParentPart)
+        if targetPart then
+            part.CFrame = HRPRelativeCFrame(pos, rot)
+            local weld  = Instance.new("Weld")
+            weld.Part0  = targetPart
+            weld.Part1  = part
+            weld.C0     = WeldC0(targetPart, pos, rot)
+            weld.Parent = part
+        else
+            warn("[Loader] ParentPart not found for: " .. name)
+        end
+    end
+
+    -- 4f. Signal clothing updater
+    character:SetAttribute("BodyTypeApplied", true)
+    character:SetAttribute("ShirtParts", table.concat(dataTable.ShirtParts or {}, ","))
+    character:SetAttribute("PantsParts", table.concat(dataTable.PantsParts or {}, ","))
+end
+
+-- ============================================================
+-- 5. CLOTHING UPDATER
+-- ============================================================
+local function GetParts(character, attributeName)
+    local raw = character:GetAttribute(attributeName) or ""
+    local parts = {}
+    for entry in raw:gmatch("[^,]+") do
+        table.insert(parts, entry)
+    end
+    return parts
+end
+
+local function UpdateShirt(char)
+    local shirt   = char:FindFirstChildOfClass("Shirt")
+    local rbxId   = ToRbxAssetId(shirt and shirt.ShirtTemplate or "")
+    local hewlett = char:FindFirstChild("Hewlett")
+
+    for _, path in ipairs(GetParts(char, "ShirtParts")) do
+        local part = ResolvePath(char, path)
+        if part then ApplyTexture(part, rbxId) end
+    end
+
+    if hewlett and hewlett.PrimaryPart then
+        hewlett.PrimaryPart.Transparency = shirt and 0 or 1
+        ApplyTexture(hewlett.PrimaryPart, rbxId)
+    end
+
+    -- Toggle WD60/WD60Shirt transparency
+    local wd60      = char:FindFirstChild("WD60")
+    local wd60Shirt = char:FindFirstChild("WD60Shirt")
+    if wd60      then wd60.Transparency      = shirt and 1 or 0 end
+    if wd60Shirt then wd60Shirt.Transparency = shirt and 0 or 1 end
+end
+
+local function UpdatePants(char)
+    local pants = char:FindFirstChildOfClass("Pants")
+    local rbxId = ToRbxAssetId(pants and pants.PantsTemplate or "")
+
+    for _, path in ipairs(GetParts(char, "PantsParts")) do
+        local part = ResolvePath(char, path)
+        if part then ApplyTexture(part, rbxId) end
+    end
+end
+
+local function WatchClothing(char)
+    while not char:GetAttribute("BodyTypeApplied") do
+        task.wait(0.1)
+    end
+
+    UpdateShirt(char)
+    UpdatePants(char)
+
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Shirt") then
+            UpdateShirt(char)
+            child:GetPropertyChangedSignal("ShirtTemplate"):Connect(function()
+                UpdateShirt(char)
+            end)
+        elseif child:IsA("Pants") then
+            UpdatePants(char)
+            child:GetPropertyChangedSignal("PantsTemplate"):Connect(function()
+                UpdatePants(char)
+            end)
+        end
+    end)
+
+    char.ChildRemoved:Connect(function(child)
+        if child:IsA("Shirt") then UpdateShirt(char)
+        elseif child:IsA("Pants") then UpdatePants(char)
+        end
+    end)
+end
+
+-- ============================================================
+-- 6. RUN
+-- ============================================================
+local player = game.Players.LocalPlayer
+
+local function ApplyAndWatch(char)
+    ApplyBodyType(char, BodyType1)
+    task.spawn(WatchClothing, char)
+end
+
+local char = player.Character
+if char then ApplyAndWatch(char) end
+
+if shouldPersist then
+    player.CharacterAdded:Connect(ApplyAndWatch)
+elseif not char then
+    player.CharacterAdded:Once(ApplyAndWatch)
+end
